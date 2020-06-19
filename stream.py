@@ -5,38 +5,59 @@ import pydeck as pdk
 
 from datetime import date
 
+# pylint: disable=no-value-for-parameter
 def main():
-    # pylint: disable=no-value-for-parameter
     st.title("Stream Covid BR")
 
     data = pd.read_csv('cases-brazil-states.csv', index_col=['date'],
                     converters={'date': lambda x: date(int(x.split('-')[0]), int(x.split('-')[1]), int(x.split('-')[2]))})
 
-    st.write("Daily notifications")
+    # Trending chart
+    show_trending(data)
+
+    # Daily notifications
+    show_daily(data)
+
+def show_daily(data):
+    st.header("Daily notifications")
+    st.sidebar.header("Daily notifications")
 
     today = date.today()
-    d = st.date_input("Selected day", date(today.year, today.month, today.day-1))
-    opt = st.selectbox("Type of view", ['Map', 'Chart'], index=0)
+    d = st.sidebar.date_input("Selected day", date(today.year, today.month, today.day-1))
+    opt = st.sidebar.selectbox("Type of view", ['Map', 'Chart'], index=0)
     try:
         filtered_data = data.loc[d, ['newDeaths', 'newCases', 'state']]
     except KeyError:
         st.info("No data for this day")
     else:
         if opt == 'Map':
+            st.subheader("Red column is number of new notifications. Black column new deaths")
             show_column_map(filtered_data)
         elif opt == 'Chart':
             show_bar_chart(filtered_data)
 
-def _get_coord(state, orientation):
-    try:
-        return STATES_COORD[state][orientation]
-    except:
-        return 0
+def show_trending(data):
+    st.header("Trending")
+    st.sidebar.header("Trending")
+
+    st.markdown("Daily new cases with rolling averages")
+
+    opt = st.sidebar.selectbox("Select state or total", data.state.unique())
+    col = st.sidebar.radio("Data", ['newCases', 'newDeaths'])
+    total = data.query(f"state == '{opt}'")
+    total.loc[:, 'Avg60'] = total[col].rolling(window=60).mean()
+    total.loc[:, 'Avg30'] = total[col].rolling(window=30).mean()
+    total.loc[:, 'AvgExp30'] = total[col].rolling(window=30, win_type='exponential').mean(tau=1)
+    st.line_chart(total.loc[:, [col, 'Avg60', 'Avg30', 'AvgExp30']]) 
+
+    st.subheader("The trends")
+    st.markdown("* Long term trends are represented by 30 and 60-day averages, the later being the strongest\n"
+                "* Short term trend is strongly related to the exponential 30-day average\n"
+                "* In few words, for the trend to be really going down, AvgExp30 should cross Avg60 down")
 
 def show_bar_chart(data):
-    # pylint: disable=no-value-for-parameter
-        c = alt.Chart(data).mark_bar().encode(x='newCases', y='state', tooltip=['newCases'], color='state')
-        st.altair_chart(c, use_container_width=True)
+    c = alt.Chart(data).mark_bar().encode(x='newCases', y='state', tooltip=['newCases'], color='state')
+    st.altair_chart(c, use_container_width=True)
 
 def show_column_map(data):
     data['lat'] = data['state'].apply(_get_coord, args=('lat',))
@@ -55,16 +76,36 @@ def show_column_map(data):
                 'ColumnLayer',
                 data=data,
                 get_position='[lon, lat]',
+                get_elevation='[newCases+newDeaths]',
+                radius=20000,
+                auto_highlight=True,
+                elevation_scale=100,
+                elevation_range=[0, 5000],
+                pickable=True,
+                extruded=True,
+                get_color="[10 10 10 255]"
+            ),
+            pdk.Layer(
+                'ColumnLayer',
+                data=data,
+                get_position='[lon, lat]',
                 get_elevation='[newCases]',
                 radius=20000,
                 auto_highlight=True,
                 elevation_scale=100,
                 elevation_range=[0, 5000],
                 pickable=True,
-                extruded=True
+                extruded=True,
+                get_color="[128 10 10 255]"
             )
         ]
     ))
+
+def _get_coord(state, orientation):
+    try:
+        return STATES_COORD[state][orientation]
+    except:
+        return 0
 
 STATES_COORD = {
     'AC': {'lat': -9.59, 'lon': -70.09},
