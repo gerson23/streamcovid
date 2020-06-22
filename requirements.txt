@@ -1,4 +1,4 @@
 streamlit
 scipy
-tensorflow
+tensorflow-cpu
 tensorflow-probability
