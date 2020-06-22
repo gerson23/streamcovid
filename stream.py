@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import pydeck as pdk
+import tensorflow as tf
+import tensorflow_probability as tfp
 
 from datetime import date
 
@@ -45,15 +47,21 @@ def show_trending(data):
     opt = st.sidebar.selectbox("Select state or total", data.state.unique())
     col = st.sidebar.radio("Data", ['newCases', 'newDeaths'])
     total = data.query(f"state == '{opt}'")
+
+    fore_total = _model_and_fit(total.loc[:, col])
+    total = total.append(fore_total, sort=False)
+
     total.loc[:, 'Avg60'] = total[col].rolling(window=60).mean()
     total.loc[:, 'Avg30'] = total[col].rolling(window=30).mean()
     total.loc[:, 'AvgExp30'] = total[col].rolling(window=30, win_type='exponential').mean(tau=1)
-    st.line_chart(total.loc[:, [col, 'Avg60', 'Avg30', 'AvgExp30']]) 
+    st.line_chart(total.loc[:, [col, 'Avg60', 'Avg30', 'AvgExp30', 'predicted']]) 
 
     st.subheader("The trends")
     st.markdown("* Long term trends are represented by 30 and 60-day averages, the later being the strongest\n"
                 "* Short term trend is strongly related to the exponential 30-day average\n"
-                "* In few words, for the trend to be really going down, AvgExp30 should cross Avg60 down")
+                "* In few words, for the trend to be really going down, AvgExp30 should cross Avg60 down\n"
+                "* Predicted line is made by a basic variational inference using Adam optimization. "
+                "This could give a sense of where it is heading, not exact number")
 
 def show_bar_chart(data):
     c = alt.Chart(data).mark_bar().encode(x='newCases', y='state', tooltip=['newCases'], color='state')
@@ -100,6 +108,35 @@ def show_column_map(data):
             )
         ]
     ))
+
+@st.cache
+def _model_and_fit(total):
+    data_tf = tf.convert_to_tensor(total, tf.float64)
+    trend = tfp.sts.LocalLinearTrend(observed_time_series=data_tf)
+    seasonal = tfp.sts.Seasonal(num_seasons=14,
+                                num_steps_per_season=1,
+                                observed_time_series=data_tf)
+    model = tfp.sts.Sum([trend, seasonal], observed_time_series=data_tf)
+
+    variational_post = tfp.sts.build_factored_surrogate_posterior(model=model)
+    num_variational_steps = 200
+    optimizer = tf.optimizers.Adam(learning_rate=.1)
+    tfp.vi.fit_surrogate_posterior(target_log_prob_fn=model.joint_log_prob(observed_time_series=data_tf),
+                                   surrogate_posterior=variational_post,
+                                   optimizer=optimizer,
+                                   num_steps=num_variational_steps)
+    samples = variational_post.sample(100)
+
+    forecasted_num = 30
+    days = pd.date_range(start=date.today(), periods=forecasted_num)
+    forescast_dist = tfp.sts.forecast(model=model,
+                                      observed_time_series=data_tf,
+                                      parameter_samples=samples,
+                                      num_steps_forecast=forecasted_num)
+    forecasted = forescast_dist.mean().numpy()[..., 0]
+    fore_total = pd.DataFrame(forecasted, columns=['predicted'], index=days)
+
+    return fore_total
 
 def _get_coord(state, orientation):
     try:
