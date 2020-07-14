@@ -4,7 +4,10 @@ import altair as alt
 import pydeck as pdk
 import tensorflow as tf
 import tensorflow_probability as tfp
+import numpy as np
 
+import gzip
+import csv
 from datetime import date
 
 # pylint: disable=no-value-for-parameter
@@ -14,11 +17,13 @@ def main():
     data = pd.read_csv('cases-brazil-states.csv', index_col=['date'],
                     converters={'date': lambda x: date(int(x.split('-')[0]), int(x.split('-')[1]), int(x.split('-')[2]))})
 
+    data_city = pd.read_csv('cases-brazil-cities.csv', index_col=['date'])
+
     # Trending chart
-    show_trending(data)
+    show_trending(data, data_city)
 
     # Daily notifications
-    show_daily(data)
+    # show_daily(data)
 
 def show_daily(data):
     st.header("Daily notifications")
@@ -38,17 +43,30 @@ def show_daily(data):
         elif opt == 'Chart':
             show_bar_chart(filtered_data)
 
-def show_trending(data):
+def show_trending(data, data_city):
     st.header("Trending")
     st.sidebar.header("Trending")
 
     st.markdown("Daily new cases with rolling averages")
 
     opt = st.sidebar.selectbox("Select state or total", data.state.unique())
-    col = st.sidebar.radio("Data", ['newCases', 'newDeaths'])
-    total = data.query(f"state == '{opt}'")
+    data_city_hist = None
 
-    fore_total = _model_and_fit(total.loc[:, col])
+    # Handle city selector if a state was selected
+    if opt != "TOTAL":
+        data_city_filtered = data_city.query(f"state == '{opt}'")
+        cities = data_city_filtered.city.unique()
+        city = st.sidebar.selectbox("Select city or total", np.insert(cities, 0, 'TOTAL'))
+        if city != "TOTAL":
+            data_city_hist = lazy_read_data_city(opt, city)
+    col = st.sidebar.radio("Data", ['newCases', 'newDeaths'])
+
+    if data_city_hist is None:
+        total = data.query(f"state == '{opt}'")
+        fore_total = _model_and_fit(total.loc[:, col])
+    else:
+        total = data_city_hist
+        fore_total = _model_and_fit(data_city_hist.loc[:, col])
     total = total.append(fore_total, sort=False)
 
     total.loc[:, 'Avg60'] = total[col].rolling(window=60).mean()
@@ -108,6 +126,23 @@ def show_column_map(data):
             )
         ]
     ))
+
+@st.cache(allow_output_mutation=True)
+def lazy_read_data_city(state, city):
+    city_data = []
+    with gzip.open('cases-brazil-cities-time.csv.gz', 'rt') as gfile:
+        reader = csv.DictReader(gfile)
+        for line in reader:
+            if line['state'] == state and line['city'] == city:
+                date_split = line['date'].split('-')
+                line['date'] = date(int(date_split[0]), int(date_split[1]), int(date_split[2]))
+                city_data.append(line)
+    
+    df = pd.DataFrame.from_records(city_data, index=['date']).loc[:, ['newCases', 'newDeaths']]
+    df['newCases'] = df['newCases'].astype('int64')
+    df['newDeaths'] = df['newDeaths'].astype('int64')
+
+    return df
 
 @st.cache
 def _model_and_fit(total):
