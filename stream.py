@@ -74,6 +74,8 @@ def show_trending(data, data_city):
     total.loc[:, 'AvgExp30'] = total[col].rolling(window=30, win_type='exponential').mean(tau=1)
     st.line_chart(total.loc[:, [col, 'Avg60', 'Avg30', 'AvgExp30', 'predicted']]) 
 
+    st.markdown("Data source: [Number of confirmed cases of COVID-19 in Brazil](https://github.com/wcota/covid19br)")
+
     st.subheader("The trends")
     st.markdown("* Long term trends are represented by 30 and 60-day averages, the later being the strongest\n"
                 "* Short term trend is strongly related to the exponential 30-day average\n"
