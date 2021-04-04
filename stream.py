@@ -8,7 +8,8 @@ import numpy as np
 
 import gzip
 import csv
-from datetime import date
+from datetime import date, timedelta
+from math import log
 
 # pylint: disable=no-value-for-parameter
 def main():
@@ -76,12 +77,28 @@ def show_trending(data, data_city):
 
     st.markdown("Data source: [Number of confirmed cases of COVID-19 in Brazil](https://github.com/wcota/covid19br)")
 
+    st.header("Reproduction number (R0)")
+    R0 = _calculate_r0(total)
+    R7 = _calculate_r0(total, 8)
+    arrow = ":small_red_triangle:" if R0 > R7 else ":small_red_triangle_down:"
+    st.markdown(f"### R0 is {R0:.2f} {arrow} (1 week ago was {R7:.2f})")
+
     st.subheader("The trends")
     st.markdown("* Long term trends are represented by 30 and 60-day averages, the later being the strongest\n"
                 "* Short term trend is strongly related to the exponential 30-day average\n"
                 "* In few words, for the trend to be really going down, AvgExp30 should cross Avg60 down\n"
                 "* Predicted line is made by a basic variational inference using Adam optimization. "
                 "This could give a sense of where it is heading, not exact number")
+    
+    st.subheader("The R0")
+    st.markdown("* R0 indicate the average number of people a single infected person infects\n"
+                "* There are different ways to model R0. Currently using AIDS model from from "
+                "[DIETZ, K. The estimation of the basic reproduction for infectious diseases]"
+                "(https://doi.org/10.1177%2F096228029300200103)")
+    st.latex(r'''R_0 = 1 + \frac{D \ln(2)} {t_d}''')
+    st.markdown("* D = duration of the infectious period\n"
+                "* td = number of days to double cases")
+
 
 def show_bar_chart(data):
     c = alt.Chart(data).mark_bar().encode(x='newCases', y='state', tooltip=['newCases'], color='state')
@@ -148,7 +165,7 @@ def lazy_read_data_city(state, city):
 
 @st.cache
 def _model_and_fit(total):
-    data_tf = tf.convert_to_tensor(total[-56:-14], tf.float64)
+    data_tf = tf.convert_to_tensor(total[-70:-14], tf.float64)
     # using last two weeks as target for fit function
     target_tf = tf.convert_to_tensor(total[-14:], tf.float64)
     trend = tfp.sts.LocalLinearTrend(observed_time_series=data_tf)
@@ -176,6 +193,23 @@ def _model_and_fit(total):
     fore_total = pd.DataFrame(forecasted, columns=['predicted'], index=days)
 
     return fore_total
+
+def _calculate_r0(data, days_ago=1):
+    """
+    Estimate R0 for the given `days_ago` getting td(doubling time) from 1-week older
+    data from the 30-day rolling average.
+    """
+    window = 7
+    D = 14
+    target_column = 'Avg30'
+
+    cases_t0 = float(data.loc[date.today() - timedelta(days=days_ago), target_column])
+    cases_t7 = float(data.loc[date.today() - timedelta(days=days_ago+window), target_column])
+
+    td = window * cases_t0 / (cases_t0 - cases_t7)
+
+    return 1 + (D * log(2) / td)
+
 
 def _get_coord(state, orientation):
     try:
