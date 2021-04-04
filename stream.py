@@ -148,9 +148,11 @@ def lazy_read_data_city(state, city):
 
 @st.cache
 def _model_and_fit(total):
-    data_tf = tf.convert_to_tensor(total, tf.float64)
+    data_tf = tf.convert_to_tensor(total[-56:-14], tf.float64)
+    # using last two weeks as target for fit function
+    target_tf = tf.convert_to_tensor(total[-14:], tf.float64)
     trend = tfp.sts.LocalLinearTrend(observed_time_series=data_tf)
-    seasonal = tfp.sts.Seasonal(num_seasons=14,
+    seasonal = tfp.sts.Seasonal(num_seasons=7,
                                 num_steps_per_season=1,
                                 observed_time_series=data_tf)
     model = tfp.sts.Sum([trend, seasonal], observed_time_series=data_tf)
@@ -158,7 +160,7 @@ def _model_and_fit(total):
     variational_post = tfp.sts.build_factored_surrogate_posterior(model=model)
     num_variational_steps = 200
     optimizer = tf.optimizers.Adam(learning_rate=.1)
-    tfp.vi.fit_surrogate_posterior(target_log_prob_fn=model.joint_log_prob(observed_time_series=data_tf),
+    tfp.vi.fit_surrogate_posterior(target_log_prob_fn=model.joint_log_prob(observed_time_series=target_tf),
                                    surrogate_posterior=variational_post,
                                    optimizer=optimizer,
                                    num_steps=num_variational_steps)
