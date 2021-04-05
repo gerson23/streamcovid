@@ -83,12 +83,12 @@ def show_trending(data, data_city):
     arrow = ":small_red_triangle:" if R0 > R7 else ":small_red_triangle_down:"
     st.markdown(f"### R0 is {R0:.2f} {arrow} (1 week ago was {R7:.2f})")
 
-    st.subheader("The trends")
-    st.markdown("* Long term trends are represented by 30 and 60-day averages, the later being the strongest\n"
-                "* Short term trend is strongly related to the exponential 30-day average\n"
-                "* In few words, for the trend to be really going down, AvgExp30 should cross Avg60 down\n"
-                "* Predicted line is made by a basic variational inference using Adam optimization. "
-                "This could give a sense of where it is heading, not exact number")
+    #st.subheader("The trends")
+    #st.markdown("* Long term trends are represented by 30 and 60-day averages, the later being the strongest\n"
+    #            "* Short term trend is strongly related to the exponential 30-day average\n"
+    #            "* In few words, for the trend to be really going down, AvgExp30 should cross Avg60 down\n"
+    #            "* Predicted line is made by a basic variational inference using Adam optimization. "
+    #            "This could give a sense of where it is heading, not exact number")
     
     st.subheader("The R0")
     st.markdown("* R0 indicate the average number of people a single infected person infects\n"
